@@ -1,0 +1,36 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find project (zip in root or unpacked project)
+        run: |
+          zips=$(ls -t ./*.zip 2>/dev/null || true)
+          if [ -n "$zips" ]; then
+            newest=$(echo "$zips" | head -n1)
+            echo "Using $newest"
+            rm -rf proj && mkdir proj
+            unzip -q "$newest" -d proj
+          elif [ -f settings.gradle.kts ]; then
+            echo "Using project in repo root"
+            mkdir -p proj && tar --exclude=./proj --exclude=./.git -cf - . | tar -xf - -C proj
+          else
+            echo "No .zip and no settings.gradle.kts in the repository root. Upload NovaClient.zip to the repo root."; exit 1
+          fi
+          dir=$(dirname "$(find proj -maxdepth 3 -name settings.gradle.kts | head -n1)")
+          echo "PROJ_DIR=$dir" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { gradle-version: 8.5 }
+      - name: Build debug APK
+        working-directory: ${{ env.PROJ_DIR }}
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NOVA-overlay-apk
+          path: ${{ env.PROJ_DIR }}/app/build/outputs/apk/debug/app-debug.apk
